@@ -11,17 +11,12 @@
 #![allow(dead_code)] //? TODO remove
 #![allow(unused_imports)] //? TODO remove
 
-// use std::convert::{From, Into};
-// use std::default::Default;
-// use std::marker::PhantomData;
-// use std::mem::{align_of, size_of, size_of_val};
-
 use static_assertions::*;
 
 #[cfg(test)]
 macro_rules! outln {
     ($($arg:tt)*) => {{
-        std::eprintln!($($arg)*);
+        //std::eprintln!($($arg)*);
     }};
 }
 
@@ -70,30 +65,42 @@ macro_rules! test_cases {
     (@with_capacity, $capacity:literal) => {
         paste::paste! {
             mod [< capacity_ $capacity >] {
-                use crate::nano_vec::{NanoVec, NanoVecError};
+                use crate::{NanoVec, NanoVecError};
                 use super::*;
 
                 const CAPACITY: usize = $capacity;
 
                 type NanoVecT = NanoVec<ElemT, CAPACITY>;
 
+                const_assert_eq!(NanoVecT::capacity(), CAPACITY);
+                const_assert_eq!(NanoVecT::CAPACITY, CAPACITY);
+                
+                //#[test]
+                fn test_try_from_array() {
+                    const LEN: usize = CAPACITY/2;
+
+                    let a: [ElemT; LEN] = std::array::from_fn(|ix| usize_to_elemt(ix));
+
+                    let nv = NanoVecT::try_from_array(a.clone()).unwrap();
+
+                    assert_eq!(nv.len(), LEN);
+
+                    for (ix, expected_elem) in a.iter().enumerate() {
+                        assert_eq!(nv.opt_ref_at(ix), Some(expected_elem));
+                    }
+                    for ix in LEN..CAPACITY {
+                        assert_eq!(nv.opt_ref_at(ix), None);
+                    }
+                }
+                
                 #[test]
-                fn test_construction() {
-                    outln!("\n================================= test_construction() for NanoVec<{ELEM_T_STR}, {CAPACITY}>");
-                    outln!("type PreconvT = {PRECONV_T_STR}");
+                fn test_try_from_iter() {
+                    let expected_len = CAPACITY.min(3);
 
-                    const_assert_eq!(NanoVecT::capacity(), CAPACITY);
-                    const_assert_eq!(NanoVecT::CAPACITY, CAPACITY);
+                    let init_iter = (0..expected_len).map(usize_to_elemt);
 
-                    let init_seq = [
-                        usize_to_elemt(0),
-                        usize_to_elemt(1),
-                        usize_to_elemt(2),
-                    ];
+                    let mut nv = NanoVecT::try_from_iter(init_iter).unwrap();
 
-                    let expected_len = init_seq.len().min(CAPACITY);
-
-                    let mut nv = NanoVecT::from_iter(init_seq);
                     assert_eq!(nv.len(), expected_len);
 
                     for ix in 0..CAPACITY + 1 {
