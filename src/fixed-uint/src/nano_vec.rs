@@ -24,36 +24,77 @@ custom_error::custom_error! {
     Empty = "Container is empty",
 }
 
-/// A very small contiguous container, like `Vec` but without reallocation.
-///
-/// `NZ` is the storage type, one of the `NonZero*` types for which
-/// `size_of<NZ> == size_of<Option<NZ>>`.
+/// A very small contiguous container, like `Vec` with a fixed capacity.
 ///
 /// `T` is the element type.
 ///
-/// Internal storage is simply an array of `[Option<T>; N]`. This implies that:
+/// Internal storage is simply an array of `[Option<T>; CAPACITY]`. This implies that:
 ///
-/// 1. Most operations such as `len()`, `push()`, and `pop()` are O(N) or O(`MAX_N`).
+/// 1. Most operations such as `len()`, `push()`, and `pop()` are O(N) or O(`CAPACITY`).
 ///
-/// 2. The best types to use for this are those for which `size_of<NZ> == size_of<Option<NZ>>`.
+/// 2. The best types to use for this are those for which `size_of<Option<T>> == size_of<T>`.
+/// Some examples are `std::ptr::NonNull` and the `std::num::NonZero*` family of types.
 /// These types have the rustc built-in attribute `#[rustc_nonnull_optimization_guaranteed]`.
-/// Some examples are `std::ptr::NonNull` and the `std::num::NonZeroU8` family of types.
+/// Unfortunately, this attribute "will never be stable", so you'll need to convert your own
+/// types to and from these basic types manually.
+///
+/// Since this is the primary use of this type, a `is_compact()` const method is provided
+/// to verify that is the case.
 ///
 #[derive(Clone, Copy)]
-pub struct NanoVec<T, const MAX_N: usize>([Option<T>; MAX_N])
-where
-    T: Clone + Copy;
+pub struct NanoVec<T, const CAPACITY: usize>([Option<T>; CAPACITY]);
 
-impl<T, const MAX_N: usize> NanoVec<T, MAX_N>
-where
-    T: Clone + Copy,
-{
-    pub const MAX_CAPACITY: usize = MAX_N;
-    pub const DEFAULT: Self = Self([None; MAX_N]);
+impl<T, const CAPACITY: usize> NanoVec<T, CAPACITY> {
+    //type Inner = [Option<T>; CAPACITY];
+
+    /// The maximum number of elements the container can store.
+    /// This value is fixed, no reallocation is allowed.
+    pub const CAPACITY: usize = CAPACITY;
+
+    /// An instance of the empty container.
+    pub const DEFAULT: Self = Self([Self::OPTION_T_NONE; CAPACITY]);
+    const OPTION_T_NONE: Option<T> = None;
+
+    // Returns true iff no space is wasted over a simple array of `[T; CAPACITY]`.
+    #[must_use]
+    #[inline]
+    pub const fn is_compact() -> bool {
+        std::mem::size_of::<[Option<T>; CAPACITY]>() <= std::mem::size_of::<[T; CAPACITY]>()
+    }
+
+    // The maximum number of elements the container can store.
+    // This value is fixed, no reallocation is allowed.
+    #[must_use]
+    #[inline]
+    pub const fn capacity() -> usize {
+        CAPACITY
+    }
 
     #[must_use]
+    #[inline]
     pub const fn new() -> Self {
         Self::DEFAULT
+    }
+
+    /// Returns an `Option<&T>` possibly referring to the element at the specified index.
+    #[inline]
+    pub const fn opt_ref_at(&self, ix: usize) -> Option<&T> {
+        if ix < Self::CAPACITY {
+            self.0[ix].as_ref()
+        } else {
+            None
+        }
+    }
+
+    /// Returns an `Option<&mut T>` possibly referring to the element at the specified
+    /// index.
+    #[inline]
+    pub fn opt_mut_at(&mut self, ix: usize) -> Option<&mut T> {
+        if ix < Self::CAPACITY {
+            self.0[ix].as_mut()
+        } else {
+            None
+        }
     }
 
     #[must_use]
@@ -77,6 +118,7 @@ where
         Err(NanoVecError::Empty)
     }
 
+    /// Returns the length of the stored sequence.
     #[must_use]
     pub fn len(&self) -> usize {
         let mut n = 0usize;
@@ -89,341 +131,325 @@ where
         }
         n
     }
+
+    /// Shortens the the stored sequence.
+    /// Has no effect if `resulting_len` is greater than or equal to the current length.
+    pub fn truncate(&mut self, resulting_len: usize) {
+        for opt_elem in self.0.iter_mut().skip(resulting_len) {
+            if opt_elem.is_some() {
+                *opt_elem = None;
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+impl<T, const CAPACITY: usize> NanoVec<T, CAPACITY>
+where
+    T: Copy,
+{
+    //? TODO pub fn push_within_capacity(&mut self, value: T) -> Result<(), T>
+    //? TODO pub fn insert(&mut self, index: usize, element: T)
+    //? TODO pub fn remove(&mut self, index: usize) -> T
+    //? TODO retain?
+    //? TODO retain_mut?
+    //? TODO dedup_by_key?
+    //? TODO dedup_by?
+    //? TODO pub fn clear(&mut self)
+    //? TODO pub fn iter(&self) -> Iter<'_, T>
+    //? TODO pub fn iter_mut(&mut self) -> IterMut<'_, T>
+    //? TODO pub fn as_mut(&mut self) -> Option<&mut T>
+    //? TODO
+}
+
+impl<S, T, const CAPACITY: usize> FromIterator<S> for NanoVec<T, CAPACITY>
+where
+    S: Into<T>,
+    T: std::fmt::Debug,
+{
+    /// Creates a `NanoVec<T, CAPACITY>` from an iterator over `T`.
+    /// Note that at most only `CAPACITY` elements will be requested from the source iterator.
+    fn from_iter<IIS>(ii: IIS) -> Self
+    where
+        IIS: IntoIterator<Item = S>,
+    {
+        // TODO Would be nice to have a  `const` version of this someday, but currently:
+        // error[E0015]: cannot call non-const fn `<IIS as IntoIterator>::into_iter` in constant functions
+        // `std::iter::Fuse` uses an `Option` internally that Rust can't yet drop in const context.
+
+        //? TODO See example implementation of `from_iter_fallible`
+        use std::array::from_fn;
+
+        let mut iter = ii.into_iter().map(Into::into).fuse();
+        let a = from_fn(|_ix| iter.next());
+        Self(a)
+    }
 }
 
 /*
-trait NanoVecTrait {
-    type Elem: Clone + Copy;
-    const MAX_N: usize;
-}
-
-impl<TT, const MAX_NN: usize> NanoVecTrait for NanoVec<TT, MAX_NN>
-where
-    TT: Clone + Copy,
+impl<T, const N: usize, const CAPACITY: usize> From<[T; N]> for NanoVec<T, CAPACITY>
 {
-    type Elem = TT;
-    const MAX_N: usize = MAX_NN;
-}
-
-trait NanoVecTrait2<NanoVecType> : NanoVecTrait {
-    type Self_;
-    const DEFAULT: NanoVecType;
-}
-
-impl<TT, const MAX_NN: usize> NanoVecTrait2<NanoVec<TT, MAX_NN>> for NanoVec<TT, MAX_NN>
-where
-    TT: Clone + Copy,
-{
-    type Self_ = NanoVec<TT, MAX_NN>;
-    const DEFAULT: NanoVec<TT, MAX_NN> = NanoVec::new();
+    /// Convert an array of `T` into a NanoVec<T> of exactly that capacity.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// assert_eq!(NanoVec::from([1, 2, 3]), vec![1, 2, 3]);
+    /// ```
+    fn from(a: [T; N]) -> Self {
+        NanoVec(a.map(Into::into))
+    }
 }
 */
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
-mod test_nanovec {
-    use super::*;
+macro_rules! outln {
+    ($($arg:tt)*) => {{
+        std::eprintln!($($arg)*);
+    }};
+}
 
-    use std::num::{
-        NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128, 
-        NonZeroI8, NonZeroI16, NonZeroI32, NonZeroI64, NonZeroI128
-    };
+macro_rules! test_cases {
+    ($elem_t:path, $preconv_t:path) => {
+        paste::paste! {
+            #[cfg(test)]
+            #[allow(clippy::unwrap_used)]
+            mod [< test_NanoVec_ $elem_t >] {
+                use super::*;
 
-    macro_rules! eprintln {
-        ($($arg:tt)*) => {{
-            std::eprintln!($($arg)*);
-        }};
-    }
+                use std::num::$elem_t;
 
-    #[test]
-    fn test() {
-        macro_rules! test_case {
-            ($elem_t:path, $preconv_t:path, $count_t:path, $max_n:literal) => {{
-                eprintln!(
-                    "\n================================================ elem_t = {}, max_n = {}",
-                    stringify!($elem_t),
-                    $max_n
-                );
-                eprintln!("type ElemT = {}", stringify!($elem_t));
-                eprintln!("type PreconvT = {}", stringify!($preconv_t));
-                eprintln!("type CountT = {}", stringify!($count_t));
+                const ELEM_T_STR: &str = stringify!($elem_t);
+                const PRECONV_T_STR: &str = stringify!($preconv_t);
 
                 type ElemT = $elem_t;
                 type PreconvT = $preconv_t;
-                type CountT = $count_t;
 
-                assert_eq!(NanoVec::<$elem_t, $max_n>::MAX_CAPACITY, $max_n);
+                fn usize_to_elem(u: usize) -> ElemT {
+                    let u128_u: u128 = u.try_into().unwrap();
 
-                let elem_val_min: CountT = CountT::try_from(1).unwrap();
-                let elem_val_max: CountT =
-                    CountT::try_from(PreconvT::try_from(ElemT::MAX).unwrap()).unwrap();
-                let elem_val_diff: CountT = elem_val_max - elem_val_min;
+                    let u128_elem_min: u128 = 1;
 
-                let count_to_elem = |n: CountT| -> ElemT {
-                    //eprintln!("count_to_elem(n: {} = {n}) -> ", stringify!($count_t));
+                    let preconv_elem_max: PreconvT = ElemT::MAX.try_into().unwrap();
+                    let u128_elem_max: u128 = preconv_elem_max.try_into().unwrap_or(u128::MAX);
 
-                    let elem_count = elem_val_min + n % elem_val_diff;
-                    //eprintln!("elem_count = {elem_count}: {}", stringify!($count_t));
+                    let u128_elem_diff = u128_elem_max - u128_elem_min;
 
-                    let preconv = PreconvT::try_from(elem_count).unwrap();
-                    //eprintln!("preconv = {preconv}: {}", stringify!($preconv_t));
+                    let u128_elem = u128_elem_min + u128_u%u128_elem_diff;
 
-                    let elem = ElemT::try_from(preconv).unwrap();
+                    let preconv_elem: PreconvT = u128_elem.try_into().unwrap();
+                    let elem: ElemT = preconv_elem.try_into().unwrap();
 
-                    eprintln!(
-                        "count_to_elem(n: {} = {n}) -> {elem}: {}",
-                        stringify!($count_t),
-                        stringify!($elem_t)
-                    );
+                    outln!("usize_to_elem({u}) -> {elem}: {ELEM_T_STR}");
+
                     elem
-                };
-
-                let mut nv: NanoVec<ElemT, $max_n> = NanoVec::DEFAULT;
-
-                let push_count_max_n: CountT = $max_n;
-
-                let push_count_first: CountT = 0;
-                let push_count_last: CountT = push_count_max_n;
-
-                let mut expected_len: usize = 0;
-
-                for push_n in push_count_first..=push_count_last {
-                    eprintln!("------------------------ push_n = {push_n}");
-
-                    let len = nv.len();
-                    eprintln!("nv.len()) -> {len}");
-                    assert_eq!(len, expected_len);
-
-                    let elem = count_to_elem(push_n);
-                    eprintln!("elem = {elem}: {}", stringify!($elem_t));
-
-                    let push_expected_result = if push_n < push_count_last {
-                        Ok(())
-                    } else {
-                        Err(NanoVecError::Full)
-                    };
-                    let push_actual_result = nv.push(elem);
-                    eprintln!("nv.push({elem}) -> {push_actual_result:?}");
-                    assert_eq!(push_expected_result, push_actual_result);
-
-                    if push_actual_result.is_ok() {
-                        eprintln!(
-                            "expected_len: {expected_len} -> {}",
-                            expected_len.wrapping_add(1)
-                        );
-                        expected_len = expected_len.checked_add(1).unwrap()
-                    }
                 }
 
-                for push_n in push_count_first..=push_count_last {
-                    eprintln!("------------------------ push_n = {push_n}");
+                test_cases!(@with_capacity, 0);
+                test_cases!(@with_capacity, 1);
+                test_cases!(@with_capacity, 5);
+            } // mod [< test_nanovec_ $elem_t >]
+        } // paste
+    };
+
+    (@with_capacity, $capacity:literal) => {
+        paste::paste! {
+            mod [< capacity_ $capacity >] {
+                use super::*;
+
+                const CAPACITY: usize = $capacity;
+
+                type NanoVecT = NanoVec<ElemT, CAPACITY>;
+
+                #[test]
+                fn test_construction() {
+                    outln!("\n================================= NanoVec<{ELEM_T_STR}, {CAPACITY}>");
+                    outln!("type PreconvT = {PRECONV_T_STR}");
+
+                    const_assert_eq!(NanoVecT::capacity(), CAPACITY);
+                    const_assert_eq!(NanoVecT::CAPACITY, CAPACITY);
+
+                    let init_seq = [
+                        usize_to_elem(0),
+                        usize_to_elem(1),
+                        usize_to_elem(2),
+                    ];
+
+                    let expected_len = init_seq.len().min(CAPACITY);
+
+                    let mut nv = NanoVecT::from_iter(init_seq);
+                    assert_eq!(nv.len(), expected_len);
+
+                    for ix in 0..CAPACITY + 1 {
+                        outln!(
+                            "nv.opt_ref_at({ix}) = {:?}",
+                            nv.opt_ref_at({ix}).copied()
+                        );
+
+                        let expected_opt_elem = if ix < expected_len {
+                            Some(usize_to_elem(ix))
+                        } else {
+                            None
+                        };
+
+                        assert_eq!(nv.opt_ref_at(ix).copied(), expected_opt_elem);
+                    }
+
+                    for ix in 0..CAPACITY + 1 {
+                        if let Some(mut_elem) = nv.opt_mut_at(ix) {
+                            *mut_elem = usize_to_elem(ix + 100);
+                        }
+                    }
+
+                    for ix in 0..CAPACITY + 1 {
+                        outln!(
+                            "nv.opt_ref_at({ix}) = {:?}",
+                            nv.opt_ref_at({ix}).copied()
+                        );
+
+                        let expected_opt_elem = if ix < expected_len {
+                            Some(usize_to_elem(ix + 100))
+                        } else {
+                            None
+                        };
+
+                        assert_eq!(nv.opt_ref_at(ix).copied(), expected_opt_elem);
+                    }
+                } // fn test_construction()
+
+                // Test truncate()
+                #[test]
+                fn test_truncate() {
+                    outln!("\n================================= NanoVec<{ELEM_T_STR}, {CAPACITY}>");
+                    outln!("type PreconvT = {PRECONV_T_STR}");
+
+                    let default_elem = ElemT::try_from(1).unwrap();
+
+                    if 1 <= CAPACITY {
+                        let mut nv = NanoVecT::DEFAULT;
+                        let mut expected_len: usize = 0;
+
+                        assert_eq!(nv.len(), expected_len);
+
+                        nv.truncate(expected_len);
+                        assert_eq!(nv.len(), expected_len);
+
+                        nv.push(default_elem).unwrap();
+                        expected_len += 1;
+                        assert_eq!(nv.len(), expected_len);
+
+                        nv.truncate(CAPACITY + 1);
+                        assert_eq!(nv.len(), expected_len);
+
+                        nv.truncate(CAPACITY);
+                        assert_eq!(nv.len(), expected_len);
+
+                        nv.truncate(expected_len);
+                        assert_eq!(nv.len(), expected_len);
+
+                        if 2 <= CAPACITY {
+                            nv.push(default_elem).unwrap();
+                            expected_len += 1;
+                            assert_eq!(nv.len(), expected_len);
+
+                            nv.truncate(expected_len);
+                            assert_eq!(nv.len(), expected_len);
+
+                            nv.truncate(1);
+                            expected_len = 1;
+                            assert_eq!(nv.len(), expected_len);
+                        }
+
+                        nv.truncate(0);
+                        expected_len = 0;
+                        assert_eq!(nv.len(), expected_len);
+                    }
+                } // fn test_truncate()
+
+                #[test]
+                fn test_push_pop() {
+                    outln!("\n================================= NanoVec<{ELEM_T_STR}, {CAPACITY}>");
+                    outln!("type PreconvT = {PRECONV_T_STR}");
+
+                    let mut nv = NanoVecT::DEFAULT;
+
+                    let mut expected_len: usize = 0;
+
+                    for ix in 0..=CAPACITY {
+                        outln!("------------------------ ix = {ix}");
+
+                        let len = nv.len();
+                        outln!("nv.len()) -> {len}");
+                        assert_eq!(len, expected_len);
+
+                        let elem = usize_to_elem(ix);
+                        outln!("elem = {elem}: {ELEM_T_STR}");
+
+                        let push_expected_result = if ix < CAPACITY {
+                            Ok(())
+                        } else {
+                            Err(NanoVecError::Full)
+                        };
+                        let push_actual_result = nv.push(elem);
+                        outln!("nv.push({elem}) -> {push_actual_result:?}");
+                        assert_eq!(push_expected_result, push_actual_result);
+
+                        if push_actual_result.is_ok() {
+                            outln!(
+                                "expected_len: {expected_len} -> {}",
+                                expected_len.wrapping_add(1)
+                            );
+                            expected_len = expected_len.checked_add(1).unwrap()
+                        }
+                    }
+
+                    for ix in 0..=CAPACITY {
+                        outln!("------------------------ ix = {ix}");
+
+                        let len = nv.len();
+                        outln!("nv.len()) -> {len}");
+                        assert_eq!(len, expected_len);
+
+                        let pop_expected_result = if ix < CAPACITY {
+                            let pop_n = CAPACITY.saturating_sub(1).saturating_sub(ix);
+                            let elem = usize_to_elem(pop_n);
+                            outln!("expecting elem {elem}: {ELEM_T_STR}");
+                            Ok(elem)
+                        } else {
+                            Err(NanoVecError::Empty)
+                        };
+
+                        let pop_actual_result = nv.pop();
+                        outln!("nv.pop() -> {pop_actual_result:?}");
+                        assert_eq!(pop_expected_result, pop_actual_result);
+
+                        if pop_actual_result.is_ok() {
+                            outln!(
+                                "expected_len: {expected_len} -> {}",
+                                expected_len.wrapping_sub(1)
+                            );
+                            expected_len = expected_len.checked_sub(1).unwrap()
+                        }
+                    }
 
                     let len = nv.len();
-                    eprintln!("nv.len()) -> {len}");
+                    outln!("nv.len()) -> {len}");
                     assert_eq!(len, expected_len);
+                } // fn test_push_pop()
+            } // mod [< capacity_ $capacity >]
+        } // paste!
+    };
+} // macro_rules!
 
-                    let pop_expected_result = if push_n < push_count_last {
-                        let pop_n = push_count_last
-                            .checked_sub(1)
-                            .unwrap()
-                            .checked_sub(push_n)
-                            .unwrap();
-
-                        let elem = count_to_elem(pop_n);
-                        eprintln!("elem = {elem}: {}", stringify!($elem_t));
-
-                        Ok(elem)
-                    } else {
-                        Err(NanoVecError::Empty)
-                    };
-
-                    let pop_actual_result = nv.pop();
-                    eprintln!("nv.pop() -> {pop_actual_result:?}");
-                    assert_eq!(pop_expected_result, pop_actual_result);
-
-                    if pop_actual_result.is_ok() {
-                        eprintln!(
-                            "expected_len: {expected_len} -> {}",
-                            expected_len.wrapping_sub(1)
-                        );
-                        expected_len = expected_len.checked_sub(1).unwrap()
-                    }
-                }
-
-                let len = nv.len();
-                eprintln!("nv.len()) -> {len}");
-                assert_eq!(len, expected_len);
-            }};
-        }
-
-        // elem_t, preconv_t, count_t, max_n
-        #[rustfmt::skip]
-        // test_case!(          u8,   u8, usize,   0);
-        // test_case!(          u8,   u8, usize, 255);
-        // test_case!(         u16,  u16, usize,   2);
-        // test_case!(         u32,  u32, usize,   2);
-        // test_case!(         u64,  u64, usize,   2);
-        // test_case!(        u128, u128,  u128,   2);
-        // test_case!(   NonZeroU8,   u8, usize,   2);
-        // test_case!(  NonZeroU16,  u16, usize,   2);
-        // test_case!(  NonZeroU32,  u32, usize,   2);
-        // test_case!(  NonZeroU64,  u64, usize,   2);
-        // test_case!( NonZeroU128, u128, u128,   2);
-        // test_case!(   NonZeroI8,   i8, usize,   2);
-        // test_case!(  NonZeroI16,  i16, usize,   2);
-        // test_case!(  NonZeroI32,  i32, usize,   2);
-        // test_case!(  NonZeroI64,  i64, usize,   2);
-        test_case!(NonZeroI128,  i128, u128,   2);
-    }
-
-    #[test]
-    fn test2() {
-        type T = u8;
-        const DEFAULT_NV: NanoVec<T, 2> = NanoVec::new();
-        let mut nv = DEFAULT_NV;
-        assert_eq!(nv.len(), 0);
-
-        assert_eq!(nv.push(0), Ok(()));
-        assert_eq!(nv.len(), 1);
-
-        assert_eq!(nv.push(1), Ok(()));
-        assert_eq!(nv.len(), 2);
-
-        assert_eq!(nv.push(2), Err(NanoVecError::Full));
-        assert_eq!(nv.len(), 2);
-
-        assert_eq!(nv.pop(), Ok(1));
-        assert_eq!(nv.len(), 1);
-
-        assert_eq!(nv.pop(), Ok(0));
-        assert_eq!(nv.len(), 0);
-
-        assert_eq!(nv.pop(), Err(NanoVecError::Empty));
-    }
-}
-
-/*
-/// Identifies instances of std::num::NonZero*
-trait NonZeroPrimitive: Clone + Copy {}
-impl NonZeroPrimitive for std::num::NonZeroU8 {}
-impl NonZeroPrimitive for std::num::NonZeroU16 {}
-impl NonZeroPrimitive for std::num::NonZeroU32 {}
-impl NonZeroPrimitive for std::num::NonZeroU64 {}
-impl NonZeroPrimitive for std::num::NonZeroU128 {}
-impl NonZeroPrimitive for std::num::NonZeroUsize {}
-impl NonZeroPrimitive for std::num::NonZeroI8 {}
-impl NonZeroPrimitive for std::num::NonZeroI16 {}
-impl NonZeroPrimitive for std::num::NonZeroI32 {}
-impl NonZeroPrimitive for std::num::NonZeroI64 {}
-impl NonZeroPrimitive for std::num::NonZeroI128 {}
-impl NonZeroPrimitive for std::num::NonZeroIsize {}
-
-/// A very small contiguous container, like `Vec` but without reallocation.
-///
-/// `NZ` is the storage type, one of the `NonZero*` types for which
-/// `size_of<NZ> == size_of<Option<NZ>>`.
-///
-/// `T` is the element type, infallibly convertible between `NZ`.
-///
-#[derive(Clone, Copy)]
-pub struct NanoVec<NZ, T, const N: usize>([Option<NZ>; N], PhantomData<fn(T) -> T>)
-where
-    NZ: Into<T> + Clone + Copy + NonZeroPrimitive,
-    T: Into<NZ> + Clone + Copy;
-
-impl<NZ, T, const N: usize> NanoVec<NZ, T, N>
-where
-    NZ: Into<T> + Clone + Copy + NonZeroPrimitive,
-    T: Into<NZ> + Clone + Copy,
-{
-    #[must_use]
-    pub const fn new() -> Self {
-        Self([Option::<NZ>::None; N], PhantomData)
-    }
-
-    #[must_use]
-    pub fn push(&mut self, elem: T) -> Result<(), NanoVecError> {
-        for mutref_opt_nz in self.0.iter_mut() {
-            if mutref_opt_nz.is_none() {
-                *mutref_opt_nz = Some(elem.into());
-                return Ok(());
-            }
-        }
-        Err(NanoVecError::Full)
-    }
-
-    #[must_use]
-    pub fn pop(&mut self) -> Result<T, NanoVecError> {
-        for mutref_opt_nz in self.0.iter_mut().rev() {
-            if let Some(nz) = *mutref_opt_nz {
-                *mutref_opt_nz = None;
-                return Ok(nz.into());
-            }
-        }
-        Err(NanoVecError::Empty)
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        let mut n = 0usize;
-        for opt_nz in self.0.iter() {
-            if opt_nz.is_some() {
-                n += 1;
-            } else {
-                break;
-            }
-        }
-        n
-    }
-}
-/*
-// Copy trait must be implmented manually because of the PhantomData.
-impl<S, T, const N: usize> Copy for NanoVec<S, T, N> {}
-
-// Clone trait must be implmented manually because of the PhantomData.
-impl<S, T, const N: usize> Clone for NanoVec<S, T, N> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-*/
-#[cfg(test)]
-#[allow(clippy::unwrap_used)]
-mod test_nanovec {
-    use super::*;
-
-    use std::num::NonZeroU8;
-    #[derive(Clone, Copy, Debug)]
-    struct T(NonZeroU8);
-
-    impl From<NonZeroU8> for T {
-        fn from(nz: NonZeroU8) -> Self {
-            T(nz)
-        }
-    }
-
-    impl From<T> for NonZeroU8 {
-        fn from(t: T) -> Self {
-            t.0
-        }
-    }
-
-    #[test]
-    fn test() {
-        let mut nv = NanoVec::<NonZeroU8, T, 2>::new();
-        assert_eq!(nv.len(), 0);
-        nv.push(T(1u8.try_into().unwrap())).expect("");
-        assert_eq!(nv.len(), 1);
-        nv.push(T(2u8.try_into().unwrap())).expect("");
-        assert_eq!(nv.len(), 2);
-        nv.push(T(2u8.try_into().unwrap())).expect_err("");
-        assert_eq!(nv.len(), 2);
-        nv.pop().expect("");
-        assert_eq!(nv.len(), 1);
-        nv.pop().expect("");
-        assert_eq!(nv.len(), 0);
-        nv.pop().expect_err("");
-        assert_eq!(nv.len(), 0);
-    }
-}
-*/
+// elem_t, preconv_t
+test_cases!(NonZeroU8, u8);
+test_cases!(NonZeroU16, u16);
+test_cases!(NonZeroU32, u32);
+test_cases!(NonZeroU64, u64);
+test_cases!(NonZeroU128, u128);
+test_cases!(NonZeroI16, i16);
+test_cases!(NonZeroI32, i32);
+test_cases!(NonZeroI64, i64);
+test_cases!(NonZeroI128, i128);
+test_cases!(NonZeroIsize, isize);
