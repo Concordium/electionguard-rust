@@ -1,0 +1,26 @@
+[package]
+name = "fixed-uint"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+#anyhow = "1.0.70"
+custom_error = "1.9.2"
+num-traits = "0.2.16"
+paste = "1.0.14"
+static_assertions = "1.1.0"
+
+# [dependencies.smallvec]
+# version = "1.11.0"
+# features = [
+#     "union", "const_generics", "const_new"
+# ]
+# 
+# [dependencies.core_extensions]
+# version = "1.5.3"
+# features = [
+#     "const_val",
+# ]
