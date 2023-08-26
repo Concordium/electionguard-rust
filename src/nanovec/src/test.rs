@@ -4,15 +4,13 @@
 #![deny(clippy::panic)]
 #![deny(clippy::manual_assert)]
 
+// This is all test code, so we allow some things.
 #![allow(clippy::unwrap_used)]
-
-#![allow(non_camel_case_types)] //? TODO remove?
-#![allow(non_snake_case)] //? TODO remove?
-#![allow(dead_code)] //? TODO remove
-#![allow(unused_imports)] //? TODO remove
+#![allow(non_snake_case)]
 
 use static_assertions::*;
 
+// A single place to enable debug printing.
 #[cfg(test)]
 macro_rules! outln {
     ($($arg:tt)*) => {{
@@ -30,9 +28,12 @@ macro_rules! test_cases {
                 use std::num::$elem_t;
 
                 type ElemT = $elem_t;
+                type PreconvT = $preconv_t;
+
+                #[allow(dead_code)]
                 const ELEM_T_STR: &str = stringify!($elem_t);
 
-                type PreconvT = $preconv_t;
+                #[allow(dead_code)]
                 const PRECONV_T_STR: &str = stringify!($preconv_t);
 
                 fn usize_to_elemt(u: usize) -> ElemT {
@@ -75,7 +76,7 @@ macro_rules! test_cases {
                 const_assert_eq!(NanoVecT::capacity(), CAPACITY);
                 const_assert_eq!(NanoVecT::CAPACITY, CAPACITY);
                 
-                //#[test]
+                #[test]
                 fn test_try_from_array() {
                     const LEN: usize = CAPACITY/2;
 

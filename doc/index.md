@@ -20,6 +20,8 @@
 
 - [`util`](crates/util/index.html) Library crate of common utilities used by [`eg`](crates/eg/index.html) and other crates and applications.
 
+- [`nanovec`](crates/nanovec/index.html) A compact contiguous container like `Vec`, but without certain runtime failures.
+
 * Other pages
   - [Rustdoc help](crates/help.html)
   - [Rustdoc settings](crates/settings.html)
