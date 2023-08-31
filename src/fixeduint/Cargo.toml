@@ -1,0 +1,13 @@
+[package]
+name = "fixeduint"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+generic-array = "0.14.7"
+num-traits = { version = "0.2.16", features = ["i128"] }
+static_assertions = "1.1.0"
+typenum = "1.16.0"
+
+[dev-dependencies]
+anyhow = "1.0.75"
