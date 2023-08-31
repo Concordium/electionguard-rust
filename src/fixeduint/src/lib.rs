@@ -8,6 +8,7 @@
 #![allow(unreachable_code)] //? TODO
 #![allow(non_camel_case_types)] //? TODO
 
+mod bitvec_organization;
 mod primitive_unsigned;
 
 use static_assertions::*;
@@ -26,45 +27,45 @@ use crate::primitive_unsigned::PrimitiveUnsigned;
 
 #[repr(transparent)]
 struct FixedUint<
-    ArrayElemT: PrimitiveUnsigned,
+    ElemT: PrimitiveUnsigned,
     const ARRAY_N: usize,
     const ALIGN: usize,
     const ELEM_ENDIAN_BIG: bool,
->([ArrayElemT; ARRAY_N]);
+>([ElemT; ARRAY_N]);
 
 trait ArrayElemType {
     type Output: PrimitiveUnsigned;
 }
 
 impl<
-        ArrayElemT: PrimitiveUnsigned,
+        ElemT: PrimitiveUnsigned,
         const ARRAY_N: usize,
         const ALIGN: usize,
         const ELEM_ENDIAN_BIG: bool,
-    > ArrayElemType for FixedUint<ArrayElemT, ARRAY_N, ALIGN, ELEM_ENDIAN_BIG>
+    > ArrayElemType for FixedUint<ElemT, ARRAY_N, ALIGN, ELEM_ENDIAN_BIG>
 {
-    type Output = ArrayElemT;
+    type Output = ElemT;
 }
 
 impl<
-        ArrayElemT: PrimitiveUnsigned,
+        ElemT: PrimitiveUnsigned,
         const ARRAY_N: usize,
         const ALIGN: usize,
         const ELEM_ENDIAN_BIG: bool,
-    > FixedUint<ArrayElemT, ARRAY_N, ALIGN, ELEM_ENDIAN_BIG>
+    > FixedUint<ElemT, ARRAY_N, ALIGN, ELEM_ENDIAN_BIG>
 {
     pub const ARRAY_N: usize = ARRAY_N;
     pub const ALIGN: usize = ALIGN;
     pub const ELEM_ENDIAN_BIG: bool = ELEM_ENDIAN_BIG;
 
-    pub const ARRAY_ELEM_SIZE_OF: usize = ArrayElemT::SIZE;
-    pub const ARRAY_BITS: usize = ArrayElemT::BITS;
+    pub const ARRAY_ELEM_SIZE_OF: usize = ElemT::SIZE;
+    pub const ARRAY_ELEM_BITS: u32 = ElemT::BITS;
 
-    pub const ZERO: Self = Self([ArrayElemT::ZERO; ARRAY_N]);
+    pub const ZERO: Self = Self([ElemT::ZERO; ARRAY_N]);
 
     pub fn is_zero(&self) -> bool {
         //? TODO transmute to larger size without swizzling
-        self.0.iter().all(|elem| *elem == ArrayElemT::ZERO)
+        self.0.iter().all(|elem| *elem == ElemT::ZERO)
     }
 
     pub fn is_equal(&self, other: &Self) -> bool {
@@ -80,11 +81,11 @@ impl<
 }
 
 impl<
-        ArrayElemT: PrimitiveUnsigned,
+        ElemT: PrimitiveUnsigned,
         const ARRAY_N: usize,
         const ALIGN: usize,
         const ELEM_ENDIAN_BIG: bool,
-    > PartialEq<Self> for FixedUint<ArrayElemT, ARRAY_N, ALIGN, ELEM_ENDIAN_BIG>
+    > PartialEq<Self> for FixedUint<ElemT, ARRAY_N, ALIGN, ELEM_ENDIAN_BIG>
 {
     fn eq(&self, other: &Self) -> bool {
         self.is_equal(other)
@@ -92,36 +93,33 @@ impl<
 }
 
 impl<
-        ArrayElemT: PrimitiveUnsigned,
+        ElemT: PrimitiveUnsigned,
         const ARRAY_N: usize,
         const ALIGN: usize,
         const ELEM_ENDIAN_BIG: bool,
-    > From<[ArrayElemT; ARRAY_N]> for FixedUint<ArrayElemT, ARRAY_N, ALIGN, ELEM_ENDIAN_BIG>
+    > From<[ElemT; ARRAY_N]> for FixedUint<ElemT, ARRAY_N, ALIGN, ELEM_ENDIAN_BIG>
 {
-    fn from(arr: [ArrayElemT; ARRAY_N]) -> Self {
+    fn from(arr: [ElemT; ARRAY_N]) -> Self {
         Self(arr)
     }
 }
 
 impl<
-        ArrayElemT: PrimitiveUnsigned,
+        ElemT: PrimitiveUnsigned,
         const ARRAY_N: usize,
         const ALIGN: usize,
         const ELEM_ENDIAN_BIG: bool,
-    > std::fmt::Debug for FixedUint<ArrayElemT, ARRAY_N, ALIGN, ELEM_ENDIAN_BIG>
+    > std::fmt::Debug for FixedUint<ElemT, ARRAY_N, ALIGN, ELEM_ENDIAN_BIG>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let bl = if ELEM_ENDIAN_BIG { "B" } else { "L" };
-        let bits = ArrayElemT::BITS;
+        let bits = ElemT::BITS;
         f.write_fmt(format_args!("FixUint<u{bits}, {ARRAY_N}, {ALIGN}, {bl}>(["))?;
         for (ix, elem) in self.0.iter().enumerate() {
             if ix != 0 {
                 f.write_str(", ")?;
             }
-            f.write_fmt(format_args!(
-                "0x{elem:0width$X}",
-                width = ArrayElemT::SIZE * 2
-            ))?;
+            f.write_fmt(format_args!("0x{elem:0width$X}", width = ElemT::SIZE * 2))?;
         }
         f.write_str("])")
     }
@@ -144,11 +142,11 @@ impl<
 
 #[cfg(test)]
 impl<
-        ArrayElemT: PrimitiveUnsigned,
+        ElemT: PrimitiveUnsigned,
         const ARRAY_N: usize,
         const ALIGN: usize,
         const ELEM_ENDIAN_BIG: bool,
-    > FixedUint<ArrayElemT, ARRAY_N, ALIGN, ELEM_ENDIAN_BIG>
+    > FixedUint<ElemT, ARRAY_N, ALIGN, ELEM_ENDIAN_BIG>
 {
     /// Creates a fixed bitpattern such that the upper nibble of every byte is the
     /// element index and the lower nibble is the byte index within the element.
@@ -156,7 +154,7 @@ impl<
     ///
     /// For example:
     ///
-    /// FixUint<ArrayElemT, ARRAY_N, ALIGN, ELEM_ENDIAN_BIG>([
+    /// FixUint<ElemT, ARRAY_N, ALIGN, ELEM_ENDIAN_BIG>([
     ///     3F3E3D3C3B3A39383736353433323130, 2F2E2D2C2B2A29282726252423222120,
     ///     1F1E1D1C1B1A19181716151413121110, 0F0E0D0C0B0A09080706050403020100
     /// ])
@@ -170,11 +168,11 @@ impl<
             };
             let elemix_nibble = elemix_usize.min(15) as u8;
 
-            let mut val_elemt = ArrayElemT::ZERO;
-            for byix_usize in 0..ArrayElemT::SIZE {
+            let mut val_elemt = ElemT::ZERO;
+            for byix_usize in 0..ElemT::SIZE {
                 let shift_bits = byix_usize * 8;
                 let by = (elemix_nibble << 4) | (byix_usize.min(15) as u8);
-                val_elemt |= ArrayElemT::from(by) << shift_bits;
+                val_elemt |= ElemT::from(by) << shift_bits;
             }
 
             val_elemt
@@ -190,7 +188,7 @@ mod tests {
     use std::mem::{align_of, size_of};
 
     type FixedUint_128_4_16_B = FixedUint<
-        u128,                   // ArrayElemT
+        u128,                   // ElemT
         4,                      // ARRAY_N
         { align_of::<u128>() }, // ALIGN
         true,                   // ELEM_ENDIAN_BIG
@@ -209,7 +207,7 @@ mod tests {
     #[test]
     fn t01() -> Result<()> {
         type UnitTestType = FixedUint_128_4_16_B;
-        //type ArrayElemT = <UnitTestType as ArrayElemType>::Output;
+        //type ElemT = <UnitTestType as ArrayElemType>::Output;
 
         // Tests std::fmt::Debug
         eprintln!("\n{:?}", UnitTestType::make_fixed_bitpattern());
@@ -218,7 +216,7 @@ mod tests {
     }
 
     type FixedUint_8_4_1_B = FixedUint<
-        u8,                   // ArrayElemT
+        u8,                   // ElemT
         4,                    // ARRAY_N
         { align_of::<u8>() }, // ALIGN
         true,                 // ELEM_ENDIAN_BIG
@@ -227,22 +225,45 @@ mod tests {
     #[test]
     fn t02() -> Result<()> {
         type UnitTestType = FixedUint_128_4_16_B;
-        //type ArrayElemT = <UnitTestType as ArrayElemType>::Output;
+        //type ElemT = <UnitTestType as ArrayElemType>::Output;
 
         // Tests std::fmt::Debug
         eprintln!("\n");
         eprintln!("{:?}", FixedUint_8_4_1_B::make_fixed_bitpattern());
 
-        eprintln!("\n");
-        eprintln!("{:?}", FixedUint::<u8, 3, 1, true>::make_fixed_bitpattern());
+        eprintln!("\n========= ElemT = u8");
+        eprintln!(
+            "{:?}",
+            FixedUint::<u8, 16, 1, true>::make_fixed_bitpattern()
+        );
+        eprintln!(
+            "{:?}",
+            FixedUint::<u8, 16, 1, false>::make_fixed_bitpattern()
+        );
         eprintln!("{:?}", FixedUint::<u8, 2, 1, true>::make_fixed_bitpattern());
+        eprintln!(
+            "{:?}",
+            FixedUint::<u8, 2, 1, false>::make_fixed_bitpattern()
+        );
         eprintln!("{:?}", FixedUint::<u8, 1, 1, true>::make_fixed_bitpattern());
+        eprintln!(
+            "{:?}",
+            FixedUint::<u8, 1, 1, false>::make_fixed_bitpattern()
+        );
         eprintln!("{:?}", FixedUint::<u8, 0, 1, true>::make_fixed_bitpattern());
+        eprintln!(
+            "{:?}",
+            FixedUint::<u8, 0, 1, false>::make_fixed_bitpattern()
+        );
 
-        eprintln!("\n");
+        eprintln!("\n========= ElemT = u16");
         eprintln!(
             "{:?}",
             FixedUint::<u16, 3, 2, true>::make_fixed_bitpattern()
+        );
+        eprintln!(
+            "{:?}",
+            FixedUint::<u16, 3, 2, false>::make_fixed_bitpattern()
         );
         eprintln!(
             "{:?}",
@@ -250,14 +271,26 @@ mod tests {
         );
         eprintln!(
             "{:?}",
+            FixedUint::<u16, 2, 2, false>::make_fixed_bitpattern()
+        );
+        eprintln!(
+            "{:?}",
             FixedUint::<u16, 1, 2, true>::make_fixed_bitpattern()
+        );
+        eprintln!(
+            "{:?}",
+            FixedUint::<u16, 1, 2, false>::make_fixed_bitpattern()
         );
         eprintln!(
             "{:?}",
             FixedUint::<u16, 0, 2, true>::make_fixed_bitpattern()
         );
+        eprintln!(
+            "{:?}",
+            FixedUint::<u16, 0, 2, false>::make_fixed_bitpattern()
+        );
 
-        eprintln!("\n");
+        eprintln!("\n========= ElemT = u32");
         eprintln!(
             "{:?}",
             FixedUint::<u32, 3, 4, true>::make_fixed_bitpattern()
@@ -275,7 +308,7 @@ mod tests {
             FixedUint::<u32, 0, 4, true>::make_fixed_bitpattern()
         );
 
-        eprintln!("\n");
+        eprintln!("\n========= ElemT = u64");
         eprintln!(
             "{:?}",
             FixedUint::<u64, 3, 8, true>::make_fixed_bitpattern()
@@ -293,7 +326,7 @@ mod tests {
             FixedUint::<u64, 0, 8, true>::make_fixed_bitpattern()
         );
 
-        eprintln!("\n");
+        eprintln!("\n========= ElemT = u128");
         eprintln!(
             "{:?}",
             FixedUint::<u128, 3, 16, true>::make_fixed_bitpattern()
