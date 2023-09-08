@@ -8,173 +8,61 @@
 #![allow(unreachable_code)] //? TODO
 #![allow(non_camel_case_types)] //? TODO
 
+use crate::endian::*;
 use crate::primitive_unsigned::*;
 
-#[repr(usize)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum AbsoluteEndian {
-    Big = 0,
-    Little = 1,
-}
+pub trait StorageOrganization {
+    /// The allocation unit type, one of `u8`, `u16`, `u32`, `u64`, or `u128`.
+    type T: PrimitiveType;
 
-impl AbsoluteEndian {
-    const ACTUAL_TARGET_ENDIAN: AbsoluteEndian = if cfg!(target_endian = "big") {
-        AbsoluteEndian::Big
-    } else {
-        AbsoluteEndian::Little
-    };
+    /// The number of allocation array units. Total size (`size_of::<[T; N]>()`) should be exactly `(1 << ALIGN_L2)*N`.
+    const N: usize;
 
-    const fn actual_target_endian() -> AbsoluteEndian {
-        Self::ACTUAL_TARGET_ENDIAN
+    fn array_n() -> usize {
+        Self::N
     }
 
-    const fn from_usize(val: usize) -> AbsoluteEndian {
-        match val {
-            0 => AbsoluteEndian::Big,
-            _ => AbsoluteEndian::Little,
-        }
-    }
-    const fn to_usize(&self) -> usize {
-        *self as usize
-    }
-    const fn is_big(&self) -> bool {
-        matches!(self, &AbsoluteEndian::Big)
-    }
-    const fn is_little(&self) -> bool {
-        matches!(self, &AbsoluteEndian::Little)
-    }
-    const fn other(&self) -> AbsoluteEndian {
-        match self {
-            AbsoluteEndian::Big => AbsoluteEndian::Little,
-            AbsoluteEndian::Little => AbsoluteEndian::Big,
-        }
-    }
-    const fn is_target(&self) -> bool {
-        //*self == Self::actual_target_endian() // can't call in const fn
-        self.to_usize() == Self::actual_target_endian().to_usize()
-    }
-    const fn is_swapped(&self) -> bool {
-        !self.is_target()
-    }
+    /// Allocation array type. Typically `[T; N]`, but could be some other types that implement
+    /// `AsRef<[T; N]>` `AsMut<[T; N]>`<br/>
+    /// `AsRef<[T]>` `AsMut<[T]>`<br/>
+    /// `std::simd::Simd` through `to_array() -> [T; N]`, `as_array() -> &[T; N]` and `as_mut_array() -> &[T; N]`<br/>
+    /// `std::simd::Simd` through `Index::index(&self, index: I) -> ...` and `Index::index_mut(&mut self, index: I) -> ...`<br/>
+    type ArrayT;
 
-    const fn to_relative(&self) -> RelativeEndian {
-        if self.is_target() {
-            RelativeEndian::Target
-        } else {
-            RelativeEndian::Swapped
-        }
-    }
-}
-
-#[cfg(test)]
-mod t_absoluteendian {
-    use super::*;
-
-    #[test]
-    fn t_00() {
-        assert_eq!(AbsoluteEndian::from_usize(0), AbsoluteEndian::Big);
-        assert_eq!(AbsoluteEndian::from_usize(1), AbsoluteEndian::Little);
-        assert_eq!(AbsoluteEndian::from_usize(2), AbsoluteEndian::Little);
-
-        assert_eq!(AbsoluteEndian::Big.to_usize(), 0);
-        assert_eq!(AbsoluteEndian::Little.to_usize(), 1);
-
-        assert_eq!(AbsoluteEndian::Big.is_big(), true);
-        assert_eq!(AbsoluteEndian::Little.is_big(), false);
-
-        assert_eq!(AbsoluteEndian::Big.is_little(), false);
-        assert_eq!(AbsoluteEndian::Little.is_little(), true);
-
-        assert_eq!(AbsoluteEndian::Big.other(), AbsoluteEndian::Little);
-        assert_eq!(AbsoluteEndian::Little.other(), AbsoluteEndian::Big);
-    }
-}
-
-#[repr(usize)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum RelativeEndian {
-    Target = 0,
-    Swapped = 1,
-}
-impl RelativeEndian {
-    const fn from_usize(val: usize) -> RelativeEndian {
-        debug_assert!(val < 2, "Invalid relative endian usize value");
-        match val {
-            0 => RelativeEndian::Target,
-            _ => RelativeEndian::Swapped,
-        }
-    }
-    const fn to_usize(&self) -> usize {
-        *self as usize
-    }
-    const fn is_target(&self) -> bool {
-        matches!(self, &RelativeEndian::Target)
-    }
-    const fn is_swapped(&self) -> bool {
-        matches!(self, &RelativeEndian::Swapped)
-    }
-    const fn to_absolute(&self) -> AbsoluteEndian {
-        #[cfg(target_endian = "little")]
-        match self {
-            RelativeEndian::Target => AbsoluteEndian::Little,
-            RelativeEndian::Swapped => AbsoluteEndian::Big,
-        }
-        #[cfg(target_endian = "big")]
-        match self {
-            RelativeEndian::Target => AbsoluteEndian::Big,
-            RelativeEndian::Swapped => AbsoluteEndian::Little,
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn t00() {}
-}
-
-/* /// A fixed-length array of RelativeEndian values.
-struct RelativeEndianVec(u64);
-impl RelativeEndianVec {
-
-    /// Creates a relative endian vec.
+    /// Typically this will be the same as the allocation unit type's alignment.<br/>
+    /// `T::BITS` should be less than or equal to `(1 << (ALIGN_L2 + 3))`<br/>
+    /// E.g. 0 for `u8`, 3 for `u64`.
     ///
-    /// `ElemT` The element type `u8`, `u16`, ..., `u128`.
+    /// Compare to: `align_of::<[std::simd::Simd<T, N>]>()`
     ///
-    /// `INDEX_BITS` The number of bits needed to index an element.
-    ///
-    const fn new_for<ElemT: PrimitiveUnsigned, const INDEX_BITS: u32>() -> RelativeEndianVec {
-        //const ELEMT_BITS_L2: u32 = ElemT::BITS_L2 as u32;
-        let intraelem_bit_index_bits = ElemT::BITS_L2 as u32;
-        const INDEX_BITS: u32 = INDEX_BITS;
+    const ALIGN_N: u32 = std::mem::align_of::<Self::T>() as u32;
 
-        //static_assertions::const_assert!(elemt_bits_l2 + INDEX_BITS <= u64::BITS);
-        //const _:() = assert!(ElemT::BITS_L2 as u32 + INDEX_BITS <= u64::BITS);
-        assert!(intraelem_bit_index_bits + INDEX_BITS <= u64::BITS);
+    fn align_n() -> u32 {
+        Self::ALIGN_N
+    }
 
-        let intrabyte_bit_index_bits: u32 = 3; // 2^3 = 8 bits per byte
-        let intraelem_byte_index_bits: u32 = ElemT::BITS_L2 as u32 - 3; // e.g. 2^2 = 4 bytes per u32
-        let total_vec_bits: u32 = intrabyte_bit_index_bits + intraelem_byte_index_bits + INDEX_BITS;
+    /// The log<sub>2</sub> of the alignment of ArrayT.
+    const ALIGN_L2: u32 = 0; //? TODO
 
-        let elemt_name = ElemT::NAME;
-        assert!(total_vec_bits <= u64::BITS,
-            "RelativeEndianVec for ElemT={elemt_name}, INDEX_BITS={INDEX_BITS} doesn't fit in u64");
+    fn align_l2() -> u32 {
+        1_u32 << Self::ALIGN_L2
+    }
 
-        let u: u64 = if total_vec_bits == u64::BITS { usize::MAX } else {
-            (1 << INDEX_BITS) - 1
-        };
+    /// Sequence order of the allocation array elements within the overall representation.
+    fn elem_order() -> SequenceOrEndian {
+        SequenceOrEndian::Sequence(SequenceOrder::Forward)
+    }
 
-        EndianVec(u)
+    /// Endianness, order of bytes, within allocation elements.
+    fn byte_order() -> ByteOrder {
+        ByteOrder {
+            absolute_endian: Endian::Little,
+            relative_endian: RelativeEndian::Native,
+        }
+    }
+
+    /// Sequence order of bits within each byte.
+    fn bit_order() -> BitOrder {
+        BitOrder::Forward
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn t00() {
-    }
-} */
