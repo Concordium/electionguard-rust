@@ -1,3 +1,10 @@
+// Copyright (C) Microsoft Corporation. All rights reserved.
+
+#![deny(clippy::unwrap_used)]
+#![deny(clippy::expect_used)]
+#![deny(clippy::panic)]
+#![deny(clippy::manual_assert)]
+
 use static_assertions::*;
 use std::mem::size_of;
 use std::ops::Mul;
@@ -5,8 +12,9 @@ use std::ops::Mul;
 use crate::bitvec_organization::*;
 use crate::endian::*;
 use crate::primitive_unsigned::*;
+use crate::teprintln;
 
-struct FixedUint<ElemT, const ARRAY_N: usize>
+struct FixedSizeArrayOfUnsigned<ElemT, const ARRAY_N: usize>
 where
     ElemT: PrimitiveType<PrimitiveType = ElemT>,
 {
@@ -15,13 +23,14 @@ where
     byte_order: ByteOrder,
 }
 
-impl<ElemT, const ARRAY_N: usize> StorageOrganization for FixedUint<ElemT, ARRAY_N>
+impl<ElemT, const ARRAY_N: usize> StorageOrganization for FixedSizeArrayOfUnsigned<ElemT, ARRAY_N>
 where
     ElemT: PrimitiveType<PrimitiveType = ElemT>,
 {
     type T = ElemT;
 
-    /// The number of allocation array units. Total size (`size_of::<[T; N]>()`) should be exactly `(1 << ALIGN_L2)*N`.
+    /// The number of allocation array units. Total size (`size_of::<[T; N]>()`) should be
+    /// exactly `(1 << ALIGN_L2)*N`.
     const N: usize = ARRAY_N;
 
     type ArrayT = [ElemT; ARRAY_N];
@@ -32,7 +41,7 @@ where
     }
 }
 
-impl<ElemT, const ARRAY_N: usize> FixedUint<ElemT, ARRAY_N>
+impl<ElemT, const ARRAY_N: usize> FixedSizeArrayOfUnsigned<ElemT, ARRAY_N>
 where
     ElemT: PrimitiveType<PrimitiveType = ElemT>,
 {
@@ -64,28 +73,29 @@ where
         let is_elem_order_big_endian =
             matches!(Self::elem_order(), SequenceOrEndian::Endian(Endian::Big));
 
-        //eprintln!("is_elem_order_big_endian: {}", is_elem_order_big_endian);//?
+        //teprintln!("is_elem_order_big_endian: {}", is_elem_order_big_endian);//?
 
-        std::array::from_fn(|mut elemix_usize| {
-            assert!(elemix_usize < Self::ARRAY_N);
+        std::array::from_fn(|mut elem_ix| {
+            assert!(elem_ix < Self::ARRAY_N);
 
-            if is_elem_order_big_endian && elemix_usize <= Self::ARRAY_N {
-                elemix_usize = Self::ARRAY_N.saturating_sub(elemix_usize + 1);
+            if is_elem_order_big_endian && elem_ix <= Self::ARRAY_N {
+                elem_ix = Self::ARRAY_N.saturating_sub(elem_ix + 1);
             }
 
-            let elemix_nibble = elemix_usize.min(15) as u8;
+            let elemix_nibble = elem_ix.min(15) as u8;
 
-            let mut val_elemt = ElemT::ZERO;
-            for byix_usize in 0..ElemT::SIZE {
-                let shift_bits = byix_usize * 8;
-                let by = (elemix_nibble << 4) | (byix_usize.min(15) as u8);
-                val_elemt |= ElemT::from(by) << shift_bits;
+            let mut val = ElemT::ZERO;
+            for byte_ix in 0..ElemT::SIZE {
+                let shift_bits = byte_ix * 8;
+                let by = (elemix_nibble << 4) | (byte_ix.min(15) as u8);
+                val |= ElemT::from(by) << shift_bits;
             }
 
-            val_elemt
+            val
         })
     }
 
+    #[allow(clippy::let_and_return)]
     pub fn new_fixed_bitpattern() -> Self {
         //type ElemT = <Self as StorageOrganization>::T;
         //type ArrayT = [ElemT; ARRAY_ELEM_SIZE];
@@ -108,15 +118,15 @@ where
         // "f80:128-"
         // "n8:16:32:64-"
         // "S128"
-        eprintln!("Self::align_l2():  {}", Self::align_l2());
-        eprintln!("align_of::<ElemT>(): {}", std::mem::align_of::<ElemT>());
-        eprintln!(
+        teprintln!("Self::align_l2():  {}", Self::align_l2());
+        teprintln!("align_of::<ElemT>(): {}", std::mem::align_of::<ElemT>());
+        teprintln!(
             "align_of_val(&self.a): {}",
             std::mem::align_of_val(&self_.a)
         );
-        eprintln!("align_of::<Self>(): {}", std::mem::align_of::<Self>());
+        teprintln!("align_of::<Self>(): {}", std::mem::align_of::<Self>());
 
-        eprintln!(
+        teprintln!(
             "ElemT::BITS: {}, Self::align_n(): {}",
             ElemT::BITS,
             Self::align_n()
@@ -144,7 +154,7 @@ where
     }
 }
 
-impl<ElemT, const ARRAY_N: usize> PartialEq<Self> for FixedUint<ElemT, ARRAY_N>
+impl<ElemT, const ARRAY_N: usize> PartialEq<Self> for FixedSizeArrayOfUnsigned<ElemT, ARRAY_N>
 where
     ElemT: PrimitiveType<PrimitiveType = ElemT>,
 {
@@ -153,7 +163,7 @@ where
     }
 }
 
-impl<ElemT, const ARRAY_N: usize> std::fmt::Debug for FixedUint<ElemT, ARRAY_N>
+impl<ElemT, const ARRAY_N: usize> std::fmt::Debug for FixedSizeArrayOfUnsigned<ElemT, ARRAY_N>
 where
     ElemT: PrimitiveType<PrimitiveType = ElemT>,
 {
@@ -197,7 +207,7 @@ mod tests {
     use static_assertions::*;
     use std::mem::{align_of, size_of};
 
-    type FixedUint_128_4 = FixedUint<
+    type FixedUint_128_4 = FixedSizeArrayOfUnsigned<
         u128, // ElemT
         4,    // ARRAY_N
     >;
@@ -210,7 +220,7 @@ mod tests {
         const FIXEDUINT_128_4_ZERO: ElemT = ElemT::ZERO;
 
         // Tests std::fmt::Debug
-        eprintln!("\n{FIXEDUINT_128_4_ZERO:?}");
+        teprintln!("\n{FIXEDUINT_128_4_ZERO:?}");
     }
 
     #[test]
@@ -219,12 +229,12 @@ mod tests {
         //type ElemT = <UnitTestType as StorageOrganization>::PrimitiveType;
 
         // Tests std::fmt::Debug
-        eprintln!("\n{:?}", UnitTestType::new_fixed_bitpattern());
+        teprintln!("\n{:?}", UnitTestType::new_fixed_bitpattern());
 
         Ok(())
     }
 
-    type FixedUint_8_4 = FixedUint<
+    type FixedUint_8_4 = FixedSizeArrayOfUnsigned<
         u8, // ElemT
         4,  // ARRAY_N
     >;
@@ -235,45 +245,45 @@ mod tests {
         //type ElemT = <UnitTestType as StorageOrganization>::PrimitiveType;
 
         // Tests std::fmt::Debug
-        eprintln!("\n{:?}", UnitTestType::new_fixed_bitpattern());
+        teprintln!("\n{:?}", UnitTestType::new_fixed_bitpattern());
 
-        eprintln!("\n========= ElemT = u8");
-        eprintln!("{:?}", FixedUint::<u8, 16>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u8, 16>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u8, 2>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u8, 2>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u8, 1>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u8, 1>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u8, 0>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u8, 0>::new_fixed_bitpattern());
+        teprintln!("\n========= ElemT = u8");
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u8, 16>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u8, 16>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u8, 2>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u8, 2>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u8, 1>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u8, 1>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u8, 0>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u8, 0>::new_fixed_bitpattern());
 
-        eprintln!("\n========= ElemT = u16");
-        eprintln!("{:?}", FixedUint::<u16, 3>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u16, 3>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u16, 2>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u16, 2>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u16, 1>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u16, 1>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u16, 0>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u16, 0>::new_fixed_bitpattern());
+        teprintln!("\n========= ElemT = u16");
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u16, 3>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u16, 3>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u16, 2>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u16, 2>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u16, 1>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u16, 1>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u16, 0>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u16, 0>::new_fixed_bitpattern());
 
-        eprintln!("\n========= ElemT = u32");
-        eprintln!("{:?}", FixedUint::<u32, 3>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u32, 2>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u32, 1>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u32, 0>::new_fixed_bitpattern());
+        teprintln!("\n========= ElemT = u32");
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u32, 3>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u32, 2>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u32, 1>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u32, 0>::new_fixed_bitpattern());
 
-        eprintln!("\n========= ElemT = u64");
-        eprintln!("{:?}", FixedUint::<u64, 3>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u64, 2>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u64, 1>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u64, 0>::new_fixed_bitpattern());
+        teprintln!("\n========= ElemT = u64");
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u64, 3>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u64, 2>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u64, 1>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u64, 0>::new_fixed_bitpattern());
 
-        eprintln!("\n========= ElemT = u128");
-        eprintln!("{:?}", FixedUint::<u128, 3>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u128, 2>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u128, 1>::new_fixed_bitpattern());
-        eprintln!("{:?}", FixedUint::<u128, 0>::new_fixed_bitpattern());
+        teprintln!("\n========= ElemT = u128");
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u128, 3>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u128, 2>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u128, 1>::new_fixed_bitpattern());
+        teprintln!("{:?}", FixedSizeArrayOfUnsigned::<u128, 0>::new_fixed_bitpattern());
 
         Ok(())
     }

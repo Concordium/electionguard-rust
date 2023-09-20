@@ -3,6 +3,31 @@
 #![deny(clippy::panic)]
 #![deny(clippy::manual_assert)]
 
+/// ## Traits useful for describing integer buffers.
+/// 
+/// ### Four marker traits from the [zerocopy](https://crates.io/crates/zerocopy) crate:
+/// 
+/// - [`zerocopy::FromZeroes`] "Indicates that a sequence of zero bytes represents a valid instance of a type"
+/// - [`zerocopy::FromBytes`] "Indicates that a type may safely be converted from an arbitrary byte sequence"
+/// - [`zerocopy::AsBytes`] "Indicates that a type may safely be converted *to* a byte sequence"
+/// 
+/// ### Traits from the [bytemuck](https://crates.io/crates/bytemuck) crate:
+/// 
+/// - [`AnyBitPattern`](`bytemuck::AnyBitPattern`) Types that are valid for any bit pattern.
+/// - [`Pod`](`bytemuck::Pod`) "Plain old data" (subtrait of `AnyBitPattern`)
+/// - [`Contiguous`](`bytemuck::Contiguous`) "Equivalent to some known integral type" and values
+/// fall within a contiguous fixed range.
+///   - Mainly for fieldless enums.
+/// - [`NoUninit`](`bytemuck::NoUninit`) Like `Pod`, but not `Zeroable` or `AnyBitPattern`.
+/// - [`CheckedBitPattern`](`bytemuck::CheckedBitPattern`) Allows checking to see if a bit pattern is valid.
+/// - [`PodInOption`](`bytemuck::PodInOption`) Types that are Pod even when in an `Option`.
+/// E.g. `std::num::NonZeroU8`.
+/// - [`Zeroable`](`bytemuck::Zeroable`) Types for which the all-zeroes bit pattern is valid.
+/// - [`TransparentWrapper`](`bytemuck::TransparentWrapper`) `#[repr(transparent)]` types.
+/// - [`ZeroableInOption`](`bytemuck::ZeroableInOption`)  Types for which all-zeroes bit pattern is
+/// valid for `Option<T>`.
+
+/// Trait to identify fixed size native primitive unsigned integer types of.
 pub trait PrimitiveType:
     Sized
     + Clone

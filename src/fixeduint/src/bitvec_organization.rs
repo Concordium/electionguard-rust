@@ -10,6 +10,7 @@
 
 use crate::endian::*;
 use crate::primitive_unsigned::*;
+use crate::primitive_unsigned::PrimitiveType;
 
 pub trait StorageOrganization {
     /// The allocation unit type, one of `u8`, `u16`, `u32`, `u64`, or `u128`.
