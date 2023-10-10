@@ -3,3 +3,4 @@
 **/.cargo
 **/.vscode
 **/local.settings.json
+**/.errorviz-version
