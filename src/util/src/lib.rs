@@ -6,6 +6,7 @@
 #![deny(clippy::manual_assert)]
 
 pub mod algebra;
+pub mod algebra_traits;
 pub mod algebra_utils;
 pub mod array_ascii;
 pub mod base16;
