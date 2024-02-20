@@ -17,3 +17,4 @@ pub mod file;
 pub mod hex_dump;
 pub mod logging;
 pub mod prime;
+pub mod field_instances;

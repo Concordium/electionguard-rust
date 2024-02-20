@@ -1,7 +1,7 @@
 use core::fmt::Debug;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use num_bigint::BigUint;
-use rand::RngCore;
+use rand::{CryptoRng, RngCore};
 use serde::Serialize;
 use subtle::Choice;
 
@@ -56,12 +56,8 @@ pub trait PrimeField:
     + DivAssign<Self>
     {
 
-    const MODULUS: BigUint;
-    const NUM_BITS: u32;
-    const CAPACITY: u32;
-    
     /// Returns an element chosen uniformly at random using a user-provided RNG.
-    fn random(rng: impl RngCore) -> Self;
+    fn random<R>(rng: &mut R) -> Self where R : RngCore + CryptoRng;
 
     /// Squares this element.
     fn square(&mut self);

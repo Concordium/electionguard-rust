@@ -11,8 +11,8 @@
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use num_traits::Num;
-
 use util::algebra::{Group, ScalarField};
+
 
 use crate::fixed_parameters::{
     ElectionGuardDesignSpecificationVersion, FixedParameterGenerationParameters, FixedParameters,
