@@ -1,123 +1,82 @@
-use crypto_bigint::{Random, Zero, U256};
-use serde::Serialize;
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
-use subtle::{Choice, ConstantTimeEq};
+use crypto_bigint::{
+    impl_modulus,
+    modular::{BernsteinYangInverter, ConstMontyForm, ConstMontyParams},
+    Invert, Odd, PrecomputeInverter, Random, Uint, U256,
+};
+use rand::{CryptoRng, RngCore};
+use subtle::{ConstantTimeEq, CtOption};
 
-use crate::algebra_traits::PrimeField;
+use crate::algebra_traits::{AdditionalFieldOps, One, PrimeField, Zero};
 
-pub const STANDARD_MODULUS: U256 =
-    U256::from_be_hex("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF43");
-
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
-pub struct StandardParamField(U256);
-
-impl From<U256> for StandardParamField {
-    fn from(value: U256) -> Self {
-        StandardParamField(value)
-    }
-}
-
-impl Add for StandardParamField {
-    type Output = StandardParamField;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        self.0.add_mod(&rhs.0, &STANDARD_MODULUS).into()
-    }
-}
-
-impl AddAssign for StandardParamField {
-    fn add_assign(&mut self, rhs: Self) {
-        todo!()
-    }
-}
-
-impl super::algebra_traits::Zero for StandardParamField {
+impl<M: ConstMontyParams<L>, const L: usize> Zero for ConstMontyForm<M, L> {
     fn zero() -> Self {
-        U256::ZERO.into()
+        Self::ZERO
     }
 
-    fn is_zero(&self) -> Choice {
-        self.0.is_zero()
-    }
-}
-
-impl Sub for StandardParamField {
-    type Output = StandardParamField;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        todo!()
+    fn is_zero(&self) -> subtle::Choice {
+        self.ct_eq(&Self::ZERO)
     }
 }
 
-impl SubAssign for StandardParamField {
-    fn sub_assign(&mut self, rhs: Self) {
-        todo!()
-    }
-}
-
-impl Mul for StandardParamField {
-    type Output = StandardParamField;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        todo!()
-    }
-}
-
-impl MulAssign for StandardParamField {
-    fn mul_assign(&mut self, rhs: Self) {
-        todo!()
-    }
-}
-
-impl super::algebra_traits::One for StandardParamField {
+impl<M: ConstMontyParams<L>, const L: usize> One for ConstMontyForm<M, L> {
     fn one() -> Self {
-        U256::ONE.into()
+        Self::ONE
     }
 
-    fn is_one(&self) -> Choice {
-        self.0.ct_eq(&U256::ONE)
-    }
-}
-
-impl Div for StandardParamField {
-    type Output = StandardParamField;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        todo!()
+    fn is_one(&self) -> subtle::Choice {
+        self.ct_eq(&Self::ONE)
     }
 }
 
-impl DivAssign for StandardParamField {
-    fn div_assign(&mut self, rhs: Self) {
-        todo!()
-    }
-}
-
-impl Neg for StandardParamField {
-    type Output = StandardParamField;
-
-    fn neg(self) -> Self::Output {
-        todo!()
-    }
-}
-
-impl PrimeField for StandardParamField {
-    fn square(&mut self) {
-        todo!()
-    }
-
-    fn double(&mut self) {
-        todo!()
-    }
-
-    fn inverse(&self) -> Option<Self> {
-        todo!()
-    }
-
+impl<M: ConstMontyParams<L>, const L: usize, const U: usize> AdditionalFieldOps
+    for ConstMontyForm<M, L>
+where
+    Odd<Uint<L>>: PrecomputeInverter<Inverter = BernsteinYangInverter<L, U>, Output = Uint<L>>,
+{
     fn random<R>(rng: &mut R) -> Self
     where
-        R: rand::prelude::RngCore + rand::prelude::CryptoRng,
+        R: RngCore + CryptoRng,
     {
-        U256::random(rng).into()
+        <Self as Random>::random(rng)
     }
+
+    fn inv(&self) -> CtOption<Self> {
+        <Self as Invert>::invert(&self)
+    }
+
+    fn pow(&self, exponent: &Self) -> Self {
+        Self::pow(&self, exponent.as_montgomery())
+    }
+
+    fn square(&self) -> Self {
+        Self::square(&self)
+    }
+}
+
+macro_rules! impl_integer_field {
+    ($field_name:ident, $modulus_type:ty) => {
+        type $field_name = ConstMontyForm<$modulus_type, { <$modulus_type>::LIMBS }>;
+        impl PrimeField for $field_name {}
+    };
+}
+
+impl_modulus!(
+    StandardModulusQ,
+    U256,
+    "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF43"
+);
+impl_integer_field!(StandardField, StandardModulusQ);
+
+#[cfg(test)]
+pub mod test_parameter_do_not_use_in_production {
+    use crypto_bigint::{
+        impl_modulus,
+        modular::{ConstMontyForm, ConstMontyParams},
+        U64,
+    };
+
+    use crate::algebra_traits::PrimeField;
+
+    impl_modulus!(TestQ01, U64, "000000000000007F");
+    impl_integer_field!(TestField01, TestQ01);
 }

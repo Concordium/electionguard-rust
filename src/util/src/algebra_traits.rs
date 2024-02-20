@@ -1,9 +1,8 @@
 use core::fmt::Debug;
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
-use num_bigint::BigUint;
 use rand::{CryptoRng, RngCore};
 use serde::Serialize;
-use subtle::Choice;
+use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use subtle::{Choice, CtOption};
 
 // Trait for additive neutral element, similar https://docs.rs/num/latest/num/traits/trait.Zero.html
 pub trait Zero: Sized + Add<Self, Output = Self> {
@@ -33,57 +32,56 @@ pub trait One: Sized + Mul<Self, Output = Self> {
     fn is_one(&self) -> Choice;
 }
 
+// Helper trait for all remaining  field operations we need
+pub trait AdditionalFieldOps: Sized {
+    /// Returns an element chosen uniformly at random using a user-provided RNG.
+    fn random<R>(rng: &mut R) -> Self
+    where
+        R: RngCore + CryptoRng;
+
+    /// Returns the square of this element.
+    fn square(&self) -> Self;
+
+    /// Computes the multiplicative inverse of this element, if nonzero.
+    fn inv(&self) -> CtOption<Self>;
+
+    /// Raises the element to the `exponent` power.
+    fn pow(&self, exponent: &Self) -> Self;
+}
+
 /// This trait represents an element of a prime field Z_q.
-pub trait PrimeField: 
+pub trait PrimeField:
     Serialize
-    + Sized 
-    + Eq 
-    //+ Copy 
-    + Clone 
-    + Send 
-    + Sync 
-    + Debug 
+    + Sized
+    + Eq
+    + Clone
+    + Send
+    + Sync
+    + Debug
     + Zero
     + One
-    + Add<Self, Output = Self> 
-    + Sub<Self, Output = Self> 
-    + AddAssign<Self> 
+    + Add<Self, Output = Self>
+    + Sub<Self, Output = Self>
+    + AddAssign<Self>
     + SubAssign<Self>
     + Mul<Self, Output = Self>
     + MulAssign<Self>
     + Neg<Output = Self>
-    + Div<Self, Output = Self>
-    + DivAssign<Self>
-    {
-
-    /// Returns an element chosen uniformly at random using a user-provided RNG.
-    fn random<R>(rng: &mut R) -> Self where R : RngCore + CryptoRng;
-
-    /// Squares this element.
-    fn square(&mut self);
-
-    /// Doubles this element.
-    fn double(&mut self);
-    
-    /// Computes the multiplicative inverse of this element, if nonzero.
-    fn inverse(&self) -> Option<Self>;
-
+    + AdditionalFieldOps
+{
 }
 
-/// This trait represents an element of a cryptographic, prime-order group.
+/// This trait represents an element of a cryptographic, prime-order group 
+/// 
+/// The trait uses multiplicative notation (as used in the specification). 
 pub trait PrimeGroup:
-    Serialize
-    + Clone
-    + Copy
-    + Debug
-    + Eq
-    + Sized
-    + Send
-    + Sync
-    + 'static
+    Serialize + Clone + Copy + Debug + Eq + Sized + Send + Sync + 'static
 {
     /// Scalars modulo the order of this group's scalar field.
     type Scalar: PrimeField;
+
+    /// A fixed generator of the group
+    const G: Self;
 
     /// Returns an element chosen uniformly at random from the non-identity elements of
     /// this group.
@@ -91,11 +89,8 @@ pub trait PrimeGroup:
     /// This function is non-deterministic, and samples from the user-provided RNG.
     fn random(rng: impl RngCore) -> Self;
 
-    /// Returns the additive identity, also known as the "neutral element".
+    /// Returns the multiplicative identity, also known as the "neutral element".
     fn identity() -> Self;
-
-    /// Returns a fixed generator of the prime-order subgroup.
-    fn generator() -> Self;
 
     /// Determines if this point is the identity.
     fn is_identity(&self) -> Choice;
@@ -112,13 +107,9 @@ pub trait PrimeGroup:
     fn exp(self, s: Self::Scalar) -> Self;
 
     /// Exponentiation with a scalar that mutates the original value
-    fn exp_assign(&mut self, s: Self::Scalar) -> Self;
+    fn exp_assign(&mut self, s: Self::Scalar);
 
     /// Group inverse
     #[must_use]
-    fn inverse(self) -> Self;
-
-    /// Group inverse that mutates the original value
-    fn inverse_assign(&mut self);
-
+    fn inv(self) -> Self;
 }
