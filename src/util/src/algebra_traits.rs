@@ -100,7 +100,25 @@ pub trait PrimeGroup:
     /// Determines if this point is the identity.
     fn is_identity(&self) -> Choice;
 
-    /// Doubles this element.
+    /// Group multiplication
     #[must_use]
-    fn double(&self) -> Self;
+    fn mul(self, rhs: Self) -> Self;
+
+    /// Group multiplication that mutates the original value
+    fn mul_assign(&mut self, rhs: Self);
+
+    /// Exponentiation with a scalar
+    #[must_use]
+    fn exp(self, s: Self::Scalar) -> Self;
+
+    /// Exponentiation with a scalar that mutates the original value
+    fn exp_assign(&mut self, s: Self::Scalar) -> Self;
+
+    /// Group inverse
+    #[must_use]
+    fn inverse(self) -> Self;
+
+    /// Group inverse that mutates the original value
+    fn inverse_assign(&mut self);
+
 }
