@@ -55,7 +55,7 @@ where
 
 macro_rules! impl_integer_field {
     ($field_name:ident, $modulus_type:ty) => {
-        type $field_name = ConstMontyForm<$modulus_type, { <$modulus_type>::LIMBS }>;
+        pub type $field_name = ConstMontyForm<$modulus_type, { <$modulus_type>::LIMBS }>;
         impl PrimeField for $field_name {}
     };
 }

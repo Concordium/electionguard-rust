@@ -75,7 +75,7 @@ pub trait PrimeField:
 /// 
 /// The trait uses multiplicative notation (as used in the specification). 
 pub trait PrimeGroup:
-    Serialize + Clone + Copy + Debug + Eq + Sized + Send + Sync + 'static
+    Serialize + Clone + Debug + Eq + Sized + Send + Sync + 'static
 {
     /// Scalars modulo the order of this group's scalar field.
     type Scalar: PrimeField;
@@ -87,7 +87,9 @@ pub trait PrimeGroup:
     /// this group.
     ///
     /// This function is non-deterministic, and samples from the user-provided RNG.
-    fn random(rng: impl RngCore) -> Self;
+    fn random<R>(rng: &mut R) -> Self
+    where
+        R: RngCore + CryptoRng;
 
     /// Returns the multiplicative identity, also known as the "neutral element".
     fn identity() -> Self;
@@ -97,10 +99,10 @@ pub trait PrimeGroup:
 
     /// Group multiplication
     #[must_use]
-    fn mul(self, rhs: Self) -> Self;
+    fn mul(self, rhs: &Self) -> Self;
 
     /// Group multiplication that mutates the original value
-    fn mul_assign(&mut self, rhs: Self);
+    fn mul_assign(&mut self, rhs: &Self);
 
     /// Exponentiation with a scalar
     #[must_use]
@@ -111,5 +113,5 @@ pub trait PrimeGroup:
 
     /// Group inverse
     #[must_use]
-    fn inv(self) -> Self;
+    fn inv(&self) -> Self;
 }
