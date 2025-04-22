@@ -18,3 +18,9 @@ sha3 = "0.10"
 
 [dev-dependencies]
 insta = { version = "1.34.0", features = ["ron"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(biguint_serialize_base64)',
+    'cfg(eg_allow_unsafe)',
+] }
